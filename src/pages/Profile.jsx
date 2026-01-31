@@ -1,6 +1,109 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { usePublicClient } from 'wagmi';
+import { useMonadBeat } from '../hooks/useMonadBeat';
+import MonadBeatABI from '../abi/MonadBeat.json';
 
 export default function Profile() {
+    const { isArtist, artistProfile, registerArtist, address, isConnected, CONTRACT_ADDRESS } = useMonadBeat();
+    const publicClient = usePublicClient();
+    const [isRegistering, setIsRegistering] = useState(false);
+    const [artistName, setArtistName] = useState("");
+    const [activities, setActivities] = useState([]);
+    const [isLoadingActivity, setIsLoadingActivity] = useState(false);
+
+    useEffect(() => {
+        if (!isConnected || !address || !publicClient) return;
+
+        const fetchActivity = async () => {
+            setIsLoadingActivity(true);
+            try {
+                // Fetch Voted events where voter is our address
+                const voteLogs = await publicClient.getLogs({
+                    address: CONTRACT_ADDRESS,
+                    event: MonadBeatABI.abi.find(x => x.name === 'Voted' || x.name === 'VoteChanged'),
+                    args: { voter: address },
+                    fromBlock: 0n,
+                    toBlock: 'latest'
+                });
+
+                // Fetch TrackMinted events where artist is our address
+                const mintLogs = await publicClient.getLogs({
+                    address: CONTRACT_ADDRESS,
+                    event: MonadBeatABI.abi.find(x => x.name === 'TrackMinted'),
+                    args: { artist: address },
+                    fromBlock: 0n,
+                    toBlock: 'latest'
+                });
+
+                const allActivities = [
+                    ...voteLogs.map(log => ({
+                        type: 'vote',
+                        trackId: log.args.trackId,
+                        isUpvote: log.args.isUpvote ?? log.args.newIsUpvote,
+                        timestamp: 'On-chain', // In real app we'd fetch block timestamp
+                        id: `vote-${log.transactionHash}-${log.logIndex}`
+                    })),
+                    ...mintLogs.map(log => ({
+                        type: 'mint',
+                        trackId: log.args.trackId,
+                        title: log.args.title,
+                        timestamp: 'On-chain',
+                        id: `mint-${log.transactionHash}-${log.logIndex}`
+                    }))
+                ].reverse(); // Newest first (logs are chronological)
+
+                setActivities(allActivities);
+            } catch (error) {
+                console.error("Error fetching activity:", error);
+            } finally {
+                setIsLoadingActivity(false);
+            }
+        };
+
+        fetchActivity();
+    }, [address, isConnected, publicClient, CONTRACT_ADDRESS]);
+
+    const handleRegister = async () => {
+        if (!artistName) return;
+        setIsRegistering(true);
+        try {
+            await registerArtist(artistName);
+            // In a real app we'd wait for receipt and refetch but simplified here
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setIsRegistering(false);
+        }
+    };
+
+    if (isConnected && !isArtist) {
+        return (
+            <div className="flex-1 flex flex-col items-center justify-center p-8">
+                <div className="max-w-md w-full bg-[#1a2630] p-8 rounded-3xl border border-[#283239] text-center">
+                    <span className="material-symbols-outlined text-6xl text-primary mb-4">artist</span>
+                    <h2 className="text-2xl font-bold mb-2">Become a Monad Artist</h2>
+                    <p className="text-[#9dadb9] mb-8">Register your profile to start uploading tracks and earning reputation.</p>
+
+                    <input
+                        type="text"
+                        placeholder="Artist Name"
+                        className="w-full bg-[#111518] border border-[#283239] p-3 rounded-xl mb-4 text-white focus:border-primary outline-none"
+                        value={artistName}
+                        onChange={(e) => setArtistName(e.target.value)}
+                    />
+
+                    <button
+                        onClick={handleRegister}
+                        disabled={isRegistering || !artistName}
+                        className="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50"
+                    >
+                        {isRegistering ? 'Registering...' : 'Register Profile'}
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="flex-1 overflow-y-auto custom-scrollbar">
             <div className="relative h-64 w-full">
@@ -15,7 +118,8 @@ export default function Profile() {
                     </div>
                     <div className="flex-1 mb-2">
                         <div className="flex items-center gap-3 mb-1">
-                            <h2 className="text-4xl font-black tracking-tight">Alex Curates</h2>
+                            <h2 className="text-4xl font-black tracking-tight">{artistProfile ? artistProfile[0] : "Monad Artist"}</h2>
+
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary/20 text-primary border border-primary/30 uppercase tracking-widest">Top Curator</span>
                         </div>
                         <p className="text-[#9dadb9] max-w-lg">Synthesizing the future of sound on Monad. Web3 music enthusiast & early discovery specialist. 🎧</p>
@@ -42,11 +146,11 @@ export default function Profile() {
                     <span className="text-xs font-bold text-[#9dadb9] uppercase tracking-widest">Following</span>
                 </div>
                 <div className="flex flex-col border-l border-[#283239]/50 pl-12">
-                    <span className="text-2xl font-black">156</span>
-                    <span className="text-xs font-bold text-[#9dadb9] uppercase tracking-widest">Curations</span>
+                    <span className="text-2xl font-black">{artistProfile ? artistProfile[2].toString() : "0"}</span>
+                    <span className="text-xs font-bold text-[#9dadb9] uppercase tracking-widest">Tracks</span>
                 </div>
                 <div className="flex flex-col border-l border-[#283239]/50 pl-12">
-                    <span className="text-2xl font-black text-primary">8.2k</span>
+                    <span className="text-2xl font-black text-primary">0</span>
                     <span className="text-xs font-bold text-[#9dadb9] uppercase tracking-widest">Reputation</span>
                 </div>
             </div>
@@ -66,42 +170,42 @@ export default function Profile() {
                     </div>
 
                     <div className="space-y-6">
-                        {/* Activity Items (simplified for brevity, can duplicate or map) */}
-                        <div className="relative flex gap-4 activity-line">
-                            <style>{`.activity-line::before { content: ''; position: absolute; left: 19px; top: 40px; bottom: 0; width: 2px; background: #283239; }`}</style>
-                            <div className="size-10 rounded-full bg-upvote/20 flex items-center justify-center shrink-0 z-10 border border-upvote/30">
-                                <span className="material-symbols-outlined text-upvote text-[20px] filled">keyboard_arrow_up</span>
+                        {isLoadingActivity ? (
+                            <div className="text-[#9dadb9] animate-pulse">Fetching on-chain history...</div>
+                        ) : activities.length === 0 ? (
+                            <div className="text-[#9dadb9] py-10 text-center bg-[#1a2630]/30 rounded-2xl border border-dashed border-[#283239]">
+                                No activity found yet. Start interacting with the feed!
                             </div>
-                            <div className="flex-1 bg-[#1a2630]/50 border border-[#283239] rounded-2xl p-4 hover:border-primary/30 transition-all">
-                                <div className="flex items-center justify-between mb-3">
-                                    <p className="text-sm font-medium">Upvoted <span className="text-white font-bold">Midnight City</span> by <span className="text-primary">M83</span></p>
-                                    <span className="text-[10px] text-[#9dadb9] font-bold uppercase">2 hours ago</span>
+                        ) : activities.map((activity) => (
+                            <div key={activity.id} className="relative flex gap-4 activity-line">
+                                <style>{`.activity-line::before { content: ''; position: absolute; left: 19px; top: 40px; bottom: 0; width: 2px; background: #283239; }`}</style>
+                                <div className={`size-10 rounded-full ${activity.type === 'vote' ? (activity.isUpvote ? 'bg-upvote/20 border-upvote/30' : 'bg-downvote/20 border-downvote/30') : 'bg-primary/20 border-primary/30'} flex items-center justify-center shrink-0 z-10 border`}>
+                                    <span className="material-symbols-outlined text-[20px] filled">
+                                        {activity.type === 'vote' ? (activity.isUpvote ? 'keyboard_arrow_up' : 'keyboard_arrow_down') : 'add_circle'}
+                                    </span>
                                 </div>
-                                <div className="flex items-center gap-4 bg-background-dark/50 rounded-xl p-3 border border-[#283239]/50">
-                                    <img alt="track" className="size-14 rounded-lg object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCTJMUVxZbFOZiKg4_SMoJTr0RNIBL58CEtN3MKfvFVpq1fgXnPcctYCxMqRuNJv1rmon9MYIYqKP2ddESe_ri8tyI37I--dBQVG4MOP9fJdEtTLvEPpb3XO8B_V67DD9Gzg2gf07I-I0meA0hPPQpyYuaXjaXuu5dHpeD_a1VMrRjGcCuDLPSbHe40_xtRvOvd8YpIEsenLayHn6fgUslhkrecIpk0x7sr006WgFeICmqZfgI-qDPc-5mNeW9RrAdzEMaB1KUAI0E" />
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-bold text-sm truncate">Midnight City</p>
-                                        <p className="text-xs text-[#9dadb9]">Electronic • Indie Pop</p>
+                                <div className="flex-1 bg-[#1a2630]/50 border border-[#283239] rounded-2xl p-4 hover:border-primary/30 transition-all">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <p className="text-sm font-medium">
+                                            {activity.type === 'vote'
+                                                ? <>{activity.isUpvote ? 'Upvoted' : 'Downvoted'} Track <span className="text-white font-bold">#{activity.trackId.toString()}</span></>
+                                                : <>Minted Track <span className="text-white font-bold">{activity.title}</span></>
+                                            }
+                                        </p>
+                                        <span className="text-[10px] text-[#9dadb9] font-bold uppercase">{activity.timestamp}</span>
                                     </div>
-                                    <button className="size-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-                                        <span className="material-symbols-outlined text-[18px] filled">play_arrow</span>
-                                    </button>
+                                    <div className="flex items-center gap-4 bg-background-dark/50 rounded-xl p-3 border border-[#283239]/50">
+                                        <div className="size-12 rounded-lg bg-[#283239] flex items-center justify-center">
+                                            <span className="material-symbols-outlined text-[#9dadb9]">music_note</span>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-sm truncate">{activity.type === 'mint' ? activity.title : `Track #${activity.trackId.toString()}`}</p>
+                                            <p className="text-xs text-[#9dadb9]">On-chain Activity</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-
-                        <div className="relative flex gap-4 activity-line">
-                            <div className="size-10 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0 z-10 border border-purple-500/30">
-                                <span className="material-symbols-outlined text-purple-500 text-[20px]">forum</span>
-                            </div>
-                            <div className="flex-1 bg-[#1a2630]/50 border border-[#283239] rounded-2xl p-4 hover:border-primary/30 transition-all">
-                                <div className="flex items-center justify-between mb-2">
-                                    <p className="text-sm font-medium text-[#9dadb9]">Commented on <span className="text-white font-bold">Neon Dreams</span></p>
-                                    <span className="text-[10px] text-[#9dadb9] font-bold uppercase">5 hours ago</span>
-                                </div>
-                                <p className="text-sm text-gray-300 italic mb-0">"The synth textures on this are absolutely groundbreaking. Great find! 🚀"</p>
-                            </div>
-                        </div>
+                        ))}
                     </div>
                 </div>
 

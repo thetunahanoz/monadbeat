@@ -1,15 +1,24 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useMonadBeat } from '../hooks/useMonadBeat';
 import { usePlayer } from '../context/PlayerContext';
+import { uploadToPinata } from '../utils/pinata';
 
 export default function Upload() {
     const navigate = useNavigate();
     const { uploadTrack } = usePlayer();
+    const { mintTrack, isArtist, isConnected } = useMonadBeat();
     const fileInputRef = useRef(null);
 
     const [file, setFile] = useState(null);
     const [title, setTitle] = useState("");
     const [artist, setArtist] = useState("");
+    const [genre, setGenre] = useState("");
+    const [description, setDescription] = useState("");
+    const [artwork, setArtwork] = useState(null);
+    const [isMinting, setIsMinting] = useState(false);
+
+    const artworkInputRef = useRef(null);
 
     const handleFileSelect = (e) => {
         const selectedFile = e.target.files[0];
@@ -22,17 +31,60 @@ export default function Upload() {
         }
     };
 
-    const handlePublish = () => {
-        if (!file) return;
+    const handleArtworkSelect = (e) => {
+        const selectedFile = e.target.files[0];
+        if (selectedFile) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                setArtwork(e.target.result);
+            };
+            reader.readAsDataURL(selectedFile);
+        }
+    };
 
-        const metadata = {
-            title: title || "Untitled Track",
-            artist: artist || "Unknown Artist",
-            artwork: "https://lh3.googleusercontent.com/aida-public/AB6AXuCTJMUVxZbFOZiKg4_SMoJTr0RNIBL58CEtN3MKfvFVpq1fgXnPcctYCxMqRuNJv1rmon9MYIYqKP2ddESe_ri8tyI37I--dBQVG4MOP9fJdEtTLvEPpb3XO8B_V67DD9Gzg2gf07I-I0meA0hPPQpyYuaXjaXuu5dHpeD_a1VMrRjGcCuDLPSbHe40_xtRvOvd8YpIEsenLayHn6fgUslhkrecIpk0x7sr006WgFeICmqZfgI-qDPc-5mNeW9RrAdzEMaB1KUAI0E" // Default artwork
-        };
+    const handleGenreSelect = (selectedGenre) => {
+        setGenre(selectedGenre);
+    };
 
-        uploadTrack(file, metadata);
-        navigate('/');
+    const handleAddCustomGenre = () => {
+        const custom = prompt("Enter custom genre:");
+        if (custom) {
+            setGenre(custom);
+        }
+    };
+
+    const handlePublish = async () => {
+        if (!file || !isConnected) return;
+        if (!isArtist) {
+            alert("Please register as an artist first (Go to Profile)");
+            return;
+        }
+
+        setIsMinting(true);
+        try {
+            // Upload Audio
+            console.log("Uploading audio to IPFS...");
+            const audioHash = await uploadToPinata(file);
+            console.log("Audio uploaded:", audioHash);
+
+            // Upload Artwork (if exists)
+            // Note: Currently contract only takes one hash. Ideally we'd upload metadata.json containing both.
+            // For this Hackathon MVP, we'll store the AUTHORITATIVE hash as the Audio Hash.
+            // A production version would require a Metadata Standard (ERC721 Metadata).
+
+            // Peak start/end (30s default for now)
+            const peakStart = 0;
+            const peakEnd = 30;
+
+            await mintTrack(audioHash, title, peakStart, peakEnd);
+            alert("Track minted successfully!");
+            navigate('/');
+        } catch (error) {
+            console.error("Minting failed:", error);
+            alert("Failed to mint track. See console.");
+        } finally {
+            setIsMinting(false);
+        }
     };
 
     return (
@@ -103,19 +155,37 @@ export default function Upload() {
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-[#9dadb9] uppercase tracking-wider">Genre</label>
                             <div className="flex flex-wrap gap-2 mb-3">
-                                <button className="px-4 py-1.5 rounded-full bg-primary text-white text-xs font-bold">Electronic</button>
-                                <button className="px-4 py-1.5 rounded-full bg-[#1a2630] border border-[#283239] text-[#9dadb9] text-xs font-bold hover:border-primary/50">Synthwave</button>
-                                <button className="px-4 py-1.5 rounded-full bg-[#1a2630] border border-[#283239] text-[#9dadb9] text-xs font-bold hover:border-primary/50">Lo-Fi</button>
-                                <button className="px-4 py-1.5 rounded-full bg-[#1a2630] border border-[#283239] text-[#9dadb9] text-xs font-bold hover:border-primary/50">Hip Hop</button>
-                                <button className="px-4 py-1.5 rounded-full bg-[#1a2630] border border-[#283239] text-[#9dadb9] text-xs font-bold hover:border-primary/50">Techno</button>
-                                <button className="px-4 py-1.5 rounded-full bg-[#1a2630] border border-dashed border-[#283239] text-[#9dadb9] text-xs font-bold hover:text-white flex items-center gap-1">
+                                {['Electronic', 'Synthwave', 'Lo-Fi', 'Hip Hop', 'Techno'].map((g) => (
+                                    <button
+                                        key={g}
+                                        onClick={() => handleGenreSelect(g)}
+                                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${genre === g ? 'bg-primary text-white border border-primary' : 'bg-[#1a2630] border border-[#283239] text-[#9dadb9] hover:border-primary/50'}`}
+                                    >
+                                        {g}
+                                    </button>
+                                ))}
+                                {genre && !['Electronic', 'Synthwave', 'Lo-Fi', 'Hip Hop', 'Techno'].includes(genre) && (
+                                    <button className="px-4 py-1.5 rounded-full bg-primary text-white text-xs font-bold border border-primary">
+                                        {genre}
+                                    </button>
+                                )}
+                                <button
+                                    onClick={handleAddCustomGenre}
+                                    className="px-4 py-1.5 rounded-full bg-[#1a2630] border border-dashed border-[#283239] text-[#9dadb9] text-xs font-bold hover:text-white flex items-center gap-1"
+                                >
                                     <span className="material-symbols-outlined text-sm">add</span> Add Custom
                                 </button>
                             </div>
                         </div>
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-[#9dadb9] uppercase tracking-wider">Track Description</label>
-                            <textarea className="w-full bg-[#1a2630] border-[#283239] rounded-xl focus:ring-primary focus:border-primary text-white resize-none p-2" placeholder="Tell the story behind this track..." rows="4"></textarea>
+                            <textarea
+                                className="w-full bg-[#1a2630] border-[#283239] rounded-xl focus:ring-primary focus:border-primary text-white resize-none p-2"
+                                placeholder="Tell the story behind this track..."
+                                rows="4"
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                            ></textarea>
                         </div>
                     </section>
 
@@ -125,11 +195,26 @@ export default function Upload() {
                             Artwork
                         </h3>
                         <div className="flex items-start gap-6">
-                            <div className="size-40 shrink-0 rounded-2xl bg-[#1a2630] border border-[#283239] flex flex-col items-center justify-center text-[#9dadb9] relative group overflow-hidden border-dashed">
-                                <span className="material-symbols-outlined text-3xl mb-1">image</span>
-                                <span className="text-[10px] font-bold">1:1 Ratio</span>
-                                <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <span className="text-xs font-bold text-white">Upload Cover</span>
+                            <div
+                                className="size-40 shrink-0 rounded-2xl bg-[#1a2630] border border-[#283239] flex flex-col items-center justify-center text-[#9dadb9] relative group overflow-hidden border-dashed cursor-pointer"
+                                onClick={() => artworkInputRef.current.click()}
+                                style={artwork ? { backgroundImage: `url(${artwork})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
+                            >
+                                <input
+                                    type="file"
+                                    ref={artworkInputRef}
+                                    className="hidden"
+                                    accept="image/*"
+                                    onChange={handleArtworkSelect}
+                                />
+                                {!artwork && (
+                                    <>
+                                        <span className="material-symbols-outlined text-3xl mb-1">image</span>
+                                        <span className="text-[10px] font-bold">1:1 Ratio</span>
+                                    </>
+                                )}
+                                <div className={`absolute inset-0 bg-black/60 flex items-center justify-center transition-opacity ${artwork ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                    <span className="text-xs font-bold text-white">{artwork ? "Change Cover" : "Upload Cover"}</span>
                                 </div>
                             </div>
                             <div className="flex-1 space-y-4 pt-2">
@@ -150,7 +235,7 @@ export default function Upload() {
                             disabled={!file}
                             className={`px-8 py-3 rounded-xl font-bold shadow-[0_0_20px_rgba(43,157,238,0.3)] transition-all transform hover:-translate-y-0.5 ${!file ? 'bg-gray-600 cursor-not-allowed opacity-50' : 'bg-primary hover:bg-primary/90 text-white'}`}
                         >
-                            Publish Track
+                            {isMinting ? "Minting NFT..." : "Mint & Publish Track"}
                         </button>
                     </div>
                 </div>

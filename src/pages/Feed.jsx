@@ -1,160 +1,44 @@
-import React, { useRef } from 'react';
-import { usePlayer } from '../context/PlayerContext';
+import React from 'react';
+import { useMonadBeat } from '../hooks/useMonadBeat';
+import FeedItem from '../components/FeedItem';
 
 export default function Feed() {
-    const {
-        currentTrack,
-        isPlaying,
-        togglePlay,
-        progress,
-        currentTime,
-        duration,
-        formatTime,
-        seek
-    } = usePlayer();
+    const { useRandomTracks } = useMonadBeat();
+    const { data: trackIds, isLoading, error } = useRandomTracks(5); // Fetch 5 random tracks for MVP
 
-    const progressBarRef = useRef(null);
+    if (isLoading) {
+        return (
+            <div className="flex-1 flex items-center justify-center text-white">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+        );
+    }
 
-    const handleSeek = (e) => {
-        if (!progressBarRef.current) return;
-        const rect = progressBarRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const width = rect.width;
-        const percent = Math.min(Math.max((x / width) * 100, 0), 100);
-        seek(percent);
-    };
+    if (error) {
+        return (
+            <div className="flex-1 flex items-center justify-center text-red-500">
+                Error loadig feed: {error.message}
+            </div>
+        );
+    }
 
-    if (!currentTrack) return null;
+    if (!trackIds || trackIds.length === 0) {
+        return (
+            <div className="flex-1 flex items-center justify-center text-[#9dadb9] flex-col gap-4">
+                <span className="material-symbols-outlined text-6xl">queue_music</span>
+                <p>No tracks found. Be the first to upload!</p>
+            </div>
+        );
+    }
 
     return (
         <>
             <div className="flex-1 overflow-y-scroll snap-y-mandatory custom-scrollbar">
-                {/* Track 1 */}
-                <section className="h-[calc(100vh-80px)] w-full flex items-center justify-center snap-start p-4 lg:p-8">
-                    <div className="relative w-full max-w-[480px] h-full max-h-[750px] bg-[#1a2630] rounded-3xl overflow-hidden shadow-2xl border border-[#283239] flex flex-col">
-                        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url('${currentTrack.artwork}')` }}>
-                            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-[#0f172a] opacity-90"></div>
-                        </div>
-                        <div className="relative z-10 p-6 flex justify-between items-start">
-                            <div className="bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 flex items-center gap-1">
-                                <span className="material-symbols-outlined text-primary text-[16px]">verified</span>
-                                <span className="text-xs font-bold uppercase tracking-wider">Premier</span>
-                            </div>
-                            <button className="size-10 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-md hover:bg-white/20 transition-colors">
-                                <span className="material-symbols-outlined text-white">more_vert</span>
-                            </button>
-                        </div>
-                        <div className="relative z-10 mt-auto p-8 pt-20 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/95 to-transparent">
-                            <div className="mb-6">
-                                <h3 className="text-4xl font-bold leading-tight mb-2 tracking-tight line-clamp-2">{currentTrack.title}</h3>
-                                <div className="flex items-center gap-2 text-[#9dadb9]">
-                                    <span className="text-xl font-medium">{currentTrack.artist}</span>
-                                    <span className="material-symbols-outlined text-primary text-[18px] filled">check_circle</span>
-                                </div>
-                            </div>
-                            <div className="flex flex-col items-center gap-6 mb-4">
-                                <div className="flex items-end justify-center gap-1.5 h-16 w-full opacity-90">
-                                    {Array(16).fill(0).map((_, i) => (
-                                        <div key={i} className="visualizer-bar"></div>
-                                    ))}
-                                </div>
-                                <div className="flex items-center gap-8">
-                                    <button className="text-white/60 hover:text-white transition-colors">
-                                        <span className="material-symbols-outlined text-[32px]">skip_previous</span>
-                                    </button>
-                                    <button
-                                        onClick={togglePlay}
-                                        className="size-16 rounded-full bg-primary text-white flex items-center justify-center hover:scale-105 transition-transform shadow-[0_0_30px_rgba(43,157,238,0.5)]"
-                                    >
-                                        <span className="material-symbols-outlined filled text-[40px]">{isPlaying ? 'pause' : 'play_arrow'}</span>
-                                    </button>
-                                    <button className="text-white/60 hover:text-white transition-colors">
-                                        <span className="material-symbols-outlined text-[32px]">skip_next</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <div
-                                    ref={progressBarRef}
-                                    onClick={handleSeek}
-                                    className="w-full h-1.5 bg-white/10 rounded-full cursor-pointer group/progress"
-                                >
-                                    <div
-                                        className="h-full bg-primary rounded-full relative"
-                                        style={{ width: `${progress}%` }}
-                                    >
-                                        <div className="absolute right-0 top-1/2 -translate-y-1/2 size-4 bg-white rounded-full shadow-lg scale-0 group-hover/progress:scale-100 transition-transform"></div>
-                                    </div>
-                                </div>
-                                <div className="flex justify-between text-xs text-[#9dadb9] font-bold">
-                                    <span>{formatTime(currentTime)}</span>
-                                    <span>{formatTime(duration)}</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-6 items-center">
-                            <div className="flex flex-col items-center bg-black/40 backdrop-blur-xl rounded-2xl py-3 px-2 border border-white/10">
-                                <button className="size-10 flex items-center justify-center rounded-lg text-[#9dadb9] hover:text-upvote hover:bg-upvote/10 transition-all">
-                                    <span className="material-symbols-outlined text-[32px] font-bold">keyboard_arrow_up</span>
-                                </button>
-                                <span className="text-sm font-bold text-upvote my-1">4.2k</span>
-                                <button className="size-10 flex items-center justify-center rounded-lg text-[#9dadb9] hover:text-downvote hover:bg-downvote/10 transition-all">
-                                    <span className="material-symbols-outlined text-[32px] font-bold">keyboard_arrow_down</span>
-                                </button>
-                            </div>
-                            <button className="size-12 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 text-white flex flex-col items-center justify-center hover:bg-white/10 transition-colors">
-                                <span className="material-symbols-outlined text-[24px]">forum</span>
-                                <span className="text-[10px] font-bold mt-0.5">124</span>
-                            </button>
-                            <button className="size-12 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 text-white flex flex-col items-center justify-center hover:bg-white/10 transition-colors">
-                                <span className="material-symbols-outlined text-[24px]">share</span>
-                                <span className="text-[10px] font-bold mt-0.5">Share</span>
-                            </button>
-                            <button className="size-12 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 text-white flex items-center justify-center hover:bg-white/10 transition-colors">
-                                <span className="material-symbols-outlined text-[24px]">playlist_add</span>
-                            </button>
-                        </div>
-                    </div>
-                </section>
-
-                {/* Track 2 */}
-                <section className="h-[calc(100vh-80px)] w-full flex items-center justify-center snap-start p-4 lg:p-8">
-                    <div className="relative w-full max-w-[480px] h-full max-h-[750px] bg-[#1a2630] rounded-3xl overflow-hidden shadow-2xl border border-[#283239] flex flex-col">
-                        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuCX_WepNicmHb7N7hT4QrzQMYdyfKnTKgS8CeDFKan61gCsBNj0FjbLkXHhVk7J7Pdp83HrdJHfpw83RHYHQKZ-SbpvzCss77rjSJbHW4ASEPlBIW_CWtlYk8LRvlbf2Xp4x5aqIV-EdE5kVBnQtoxdQ6tzbVmw_eqJOtwPRo7LbDef0J7UF7eDV41MfxOyR0xgMbBOYf34Wo6_pqve5_3vc-MKOcew6ykvBhYNTTGcqz4Ni0FAEkmhdXVbUtGhcj5H-SIuLF4HYpc')" }}>
-                            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-[#0f172a] opacity-90"></div>
-                        </div>
-                        <div className="relative z-10 p-6 flex justify-between items-start">
-                            <div className="bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 flex items-center gap-1">
-                                <span className="material-symbols-outlined text-green-400 text-[16px]">trending_up</span>
-                                <span className="text-xs font-bold uppercase tracking-wider">Rising Track</span>
-                            </div>
-                        </div>
-                        <div className="relative z-10 mt-auto p-8 pt-20 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/95 to-transparent">
-                            <div className="mb-6">
-                                <h3 className="text-4xl font-bold leading-tight mb-2 tracking-tight">Neon Dreams</h3>
-                                <div className="flex items-center gap-2 text-[#9dadb9]">
-                                    <span className="text-xl font-medium">Cyber Collective</span>
-                                </div>
-                            </div>
-                            <div className="flex flex-col items-center gap-6 mb-4">
-                                <div className="flex items-end justify-center gap-1.5 h-16 w-full opacity-40">
-                                    <div className="w-1 bg-white/20 h-4 rounded-full"></div>
-                                    <div className="w-1 bg-white/20 h-6 rounded-full"></div>
-                                    <div className="w-1 bg-white/20 h-10 rounded-full"></div>
-                                    <div className="w-1 bg-white/20 h-4 rounded-full"></div>
-                                </div>
-                                <div className="flex items-center gap-8">
-                                    <button className="text-white/60"><span className="material-symbols-outlined text-[32px]">skip_previous</span></button>
-                                    <button className="size-16 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-all">
-                                        <span className="material-symbols-outlined filled text-[40px]">play_arrow</span>
-                                    </button>
-                                    <button className="text-white/60"><span className="material-symbols-outlined text-[32px]">skip_next</span></button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+                {trackIds.map((id) => (
+                    <FeedItem key={id.toString()} trackId={id} />
+                ))}
             </div>
+
 
             <aside className="hidden xl:flex w-80 flex-col gap-6 p-8 border-l border-[#283239]/30 bg-[#111518]/30 overflow-y-auto">
                 <div className="bg-[#1a2630]/60 backdrop-blur-md rounded-2xl p-5 border border-[#283239]">

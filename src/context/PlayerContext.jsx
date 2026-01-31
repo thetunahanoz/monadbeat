@@ -68,6 +68,29 @@ export function PlayerProvider({ children }) {
         setIsPlaying(!isPlaying);
     };
 
+    const playTrack = (track) => {
+        // Stop current
+        audioRef.current.pause();
+        setIsPlaying(false);
+
+        // Set new source
+        audioRef.current.src = track.src;
+        audioRef.current.load();
+
+        setCurrentTrack({
+            id: track.id,
+            title: track.title,
+            artist: track.artist,
+            artwork: track.artwork,
+            fileUrl: track.src
+        });
+
+        // Auto play
+        audioRef.current.play()
+            .then(() => setIsPlaying(true))
+            .catch(e => console.error("Playback failed", e));
+    };
+
     const uploadTrack = (file, metadata) => {
         const fileUrl = URL.createObjectURL(file);
         const newTrack = {
@@ -113,6 +136,7 @@ export function PlayerProvider({ children }) {
         duration,
         togglePlay,
         uploadTrack,
+        playTrack,
         seek,
         formatTime
     };
